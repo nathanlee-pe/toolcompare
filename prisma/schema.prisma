@@ -1,0 +1,303 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// CATEGORY
+// ─────────────────────────────────────────────
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?  // lucide icon name or emoji
+  color       String?  // hex color for UI
+
+  // Self-referential for subcategories
+  parentId    String?
+  parent      Category?  @relation("CategoryChildren", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryChildren")
+
+  tools       Tool[]
+
+  metaTitle       String?
+  metaDescription String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([slug])
+}
+
+// ─────────────────────────────────────────────
+// TAG
+// ─────────────────────────────────────────────
+model Tag {
+  id    String    @id @default(cuid())
+  name  String    @unique
+  slug  String    @unique
+  tools ToolTag[]
+
+  @@index([slug])
+}
+
+// ─────────────────────────────────────────────
+// TOOL  (the core entity)
+// ─────────────────────────────────────────────
+model Tool {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  tagline          String?  // one-liner shown in cards
+  description      String   // full markdown body
+  logo             String?  // URL to logo image
+  website          String   // official homepage
+  foundedYear      Int?
+  employeeRange    String?  // e.g. "51-200"
+  headquarters     String?
+
+  // Pricing summary (human-readable)
+  pricingModel     PricingModel @default(FREEMIUM)
+  startingPrice    Float?       // USD/month for lowest paid tier
+  hasFreeTrial     Boolean      @default(false)
+  hasFreeplan      Boolean      @default(false)
+
+  // Aggregate rating (denormalized for query speed)
+  avgRating        Float        @default(0)
+  reviewCount      Int          @default(0)
+
+  // Structured pros / cons (stored as string arrays)
+  pros             String[]
+  cons             String[]
+
+  // Feature flags for comparison table (JSON for flexibility)
+  // e.g. { "api": true, "sso": true, "mobileApp": false }
+  features         Json         @default("{}")
+
+  // SEO
+  metaTitle        String?
+  metaDescription  String?
+  publishedAt      DateTime?    // null = draft
+
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  tags        ToolTag[]
+  pricingTiers PricingTier[]
+  reviews     Review[]
+  affiliateLinks AffiliateLink[]
+
+  // Comparisons where this tool appears on either side
+  comparisonsAsA Comparison[] @relation("ComparisonToolA")
+  comparisonsAsB Comparison[] @relation("ComparisonToolB")
+
+  // Click tracking
+  clickLogs      ClickLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([publishedAt])
+  @@index([avgRating])
+}
+
+// ─────────────────────────────────────────────
+// PRICING TIER
+// ─────────────────────────────────────────────
+model PricingTier {
+  id           String  @id @default(cuid())
+  toolId       String
+  tool         Tool    @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  name         String  // "Free", "Pro", "Business", "Enterprise"
+  price        Float?  // null = contact sales
+  billingCycle BillingCycle @default(MONTHLY)
+  currency     String  @default("USD")
+  isPopular    Boolean @default(false)
+  isFree       Boolean @default(false)
+
+  // Features included in this tier (JSON array of strings)
+  features     String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([toolId])
+}
+
+// ─────────────────────────────────────────────
+// REVIEW
+// ─────────────────────────────────────────────
+model Review {
+  id        String @id @default(cuid())
+  toolId    String
+  tool      Tool   @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  rating    Int    // 1-5
+  title     String
+  body      String // markdown
+  pros      String[]
+  cons      String[]
+
+  // Reviewer info
+  authorName    String
+  authorRole    String?  // e.g. "Marketing Manager at Acme"
+  authorCompany String?
+  verified      Boolean  @default(false)
+  isPublished   Boolean  @default(false)
+
+  // Sub-scores for detailed reviews
+  easeOfUse     Int?  // 1-5
+  valueForMoney Int?  // 1-5
+  features      Int?  // 1-5
+  support       Int?  // 1-5
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([toolId])
+  @@index([rating])
+}
+
+// ─────────────────────────────────────────────
+// COMPARISON  (Tool A vs Tool B)
+// ─────────────────────────────────────────────
+model Comparison {
+  id      String @id @default(cuid())
+  slug    String @unique  // e.g. "notion-vs-confluence"
+
+  toolAId String
+  toolA   Tool   @relation("ComparisonToolA", fields: [toolAId], references: [id])
+
+  toolBId String
+  toolB   Tool   @relation("ComparisonToolB", fields: [toolBId], references: [id])
+
+  // Winner verdict (optional editorial pick)
+  winnerToolId  String?
+  verdict       String?   // brief summary of the verdict
+  body          String?   // full markdown comparison article
+
+  metaTitle       String?
+  metaDescription String?
+  publishedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([toolAId, toolBId])
+  @@index([slug])
+  @@index([toolAId])
+  @@index([toolBId])
+}
+
+// ─────────────────────────────────────────────
+// AFFILIATE LINK
+// ─────────────────────────────────────────────
+model AffiliateLink {
+  id       String @id @default(cuid())
+  toolId   String
+  tool     Tool   @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  label        String   // "Get 30% off", "Start free trial"
+  url          String   // raw destination URL
+  trackedUrl   String?  // affiliate/tracking URL
+  program      String?  // e.g. "ShareASale", "Impact", "direct"
+  commission   String?  // e.g. "30% recurring"
+  cookieDays   Int?     // affiliate cookie window
+  isActive     Boolean  @default(true)
+  isPrimary    Boolean  @default(false)  // one primary CTA per tool
+
+  // Denormalized click counter (fast read for dashboards)
+  clicks       Int      @default(0)
+
+  // Granular click log (one row per click)
+  clickLogs    ClickLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([toolId])
+}
+
+// ─────────────────────────────────────────────
+// CLICK LOG  (one row per affiliate redirect)
+// ─────────────────────────────────────────────
+model ClickLog {
+  id              String        @id @default(cuid())
+
+  // What was clicked
+  affiliateLinkId String
+  affiliateLink   AffiliateLink @relation(fields: [affiliateLinkId], references: [id], onDelete: Cascade)
+  toolId          String
+  tool            Tool          @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  // Request metadata
+  referrer        String?       // HTTP Referer header (which page sent the user)
+  userAgent       String?       // User-Agent header, trimmed to 512 chars
+  ipHash          String?       // SHA-256(salt+IP) — privacy-safe, still deduplicates
+  country         String?       // From x-vercel-ip-country or CF-IPCountry header
+
+  // Source attribution (matches AffiliateCta "source" prop)
+  source          String?       // e.g. "tool-hero", "tool-sidebar", "category-spotlight"
+
+  createdAt       DateTime      @default(now())
+
+  @@index([toolId])
+  @@index([affiliateLinkId])
+  @@index([createdAt])
+  @@index([source])
+  @@index([toolId, createdAt])  // for per-tool time-series queries
+}
+
+// ─────────────────────────────────────────────
+// SUBSCRIBER  (email capture leads)
+// ─────────────────────────────────────────────
+model Subscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  source    String?  // which page/widget triggered the capture
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// JOIN TABLE: Tool <-> Tag
+// ─────────────────────────────────────────────
+model ToolTag {
+  toolId String
+  tagId  String
+  tool   Tool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([toolId, tagId])
+  @@index([tagId])
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+enum PricingModel {
+  FREE
+  FREEMIUM
+  PAID
+  QUOTE_BASED
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+  LIFETIME
+  PER_SEAT
+  USAGE_BASED
+}

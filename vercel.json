@@ -1,0 +1,99 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+
+  "framework": "nextjs",
+
+  "buildCommand": "prisma generate && next build",
+  "installCommand": "npm ci",
+  "outputDirectory": ".next",
+
+  "regions": ["iad1"],
+
+  "env": {
+    "ANTHROPIC_API_KEY":   "@anthropic-api-key",
+    "AFFILIATE_SECRET":    "@affiliate-secret",
+    "CLICK_IP_SALT":       "@click-ip-salt",
+    "REVALIDATION_SECRET": "@revalidation-secret"
+  },
+
+  "build": {
+    "env": {
+      "DATABASE_URL":               "@database-url",
+      "NEXT_PUBLIC_SITE_URL":       "https://yourdomain.com",
+      "NEXT_PUBLIC_SITE_NAME":      "SaaS Reviews",
+      "NEXT_PUBLIC_GA_ID":          "@next-public-ga-id",
+      "NEXT_PUBLIC_PLAUSIBLE_DOMAIN": ""
+    }
+  },
+
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options",        "value": "DENY" },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains; preload"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    },
+    {
+      "source": "/sitemap(.*)\\.xml",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/robots.txt",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
+    },
+    {
+      "source": "/go/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
+      ]
+    }
+  ],
+
+  "redirects": [
+    {
+      "source": "/categories/:slug",
+      "destination": "/category/:slug",
+      "permanent": true
+    }
+  ],
+
+  "rewrites": [
+    {
+      "source": "/compare/:toolA-vs-:toolB",
+      "destination": "/compare/:toolA-vs-:toolB"
+    }
+  ],
+
+  "crons": [
+    {
+      "path": "/api/revalidate?secret=${REVALIDATION_SECRET}&tag=tools",
+      "schedule": "0 3 * * *"
+    }
+  ],
+
+  "functions": {
+    "app/go/[slug]/route.ts": {
+      "maxDuration": 10
+    },
+    "app/api/**": {
+      "maxDuration": 30
+    }
+  }
+}
